@@ -105,7 +105,8 @@ extern "C" {
 
 static EFI_BOOT_SERVICES  LocalBs = {
   { 0, 0, 0, 0, 0 },                                                                   // EFI_TABLE_HEADER
-  gBS_RasieTpl,                                                                        // EFI_RAISE_TPL
+  gBS_RaiseTpl,                                                                        // EFI_RAISE_TPL
+
   gBS_RestoreTpl,                                                                      // EFI_RESTORE_TPL
   NULL,                                                                                // EFI_ALLOCATE_PAGES
   NULL,                                                                                // EFI_FREE_PAGES
