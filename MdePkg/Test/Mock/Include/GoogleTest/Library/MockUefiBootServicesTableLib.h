@@ -207,7 +207,8 @@ struct MockUefiBootServicesTableLib {
 
   MOCK_FUNCTION_DECLARATION (
     EFI_TPL,
-    gBS_RasieTpl,
+    gBS_RaiseTpl,
+
     (IN EFI_TPL      NewTpl)
     );
 
