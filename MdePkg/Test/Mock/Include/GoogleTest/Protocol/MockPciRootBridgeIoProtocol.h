@@ -239,27 +239,24 @@ MOCK_FUNCTION_DEFINITION (MockPciRootBridgeIoSetAttributes, MockPciRootBridgeSet
 MOCK_INTERFACE_DEFINITION (MockPciRootBridgeIoConfiguration);
 MOCK_FUNCTION_DEFINITION (MockPciRootBridgeIoConfiguration, MockPciRootBridgeConfiguration, 2, EFIAPI);
 
-EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL  PCI_ROOT_BRIDGE_IO_PROTOCOL_MOCK = {
-  NULL,                                                    // EFI_HANDLE                                         ParentHandle;
-  MockPciRootBridgePollMem,                                // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_POLL_IO_MEM        PollMem;
-  MockPciRootBridgePollIo,                                 // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_POLL_IO_MEM        PollIo;
-  { MockPciRootBridgeMemRead, MockPciRootBridgeMemWrite }, // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_ACCESS             Mem;
-  { MockPciRootBridgeIoRead,  MockPciRootBridgeIoWrite  }, // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_ACCESS             Io;
-  { MockPciRootBridgePciRead, MockPciRootBridgePciWrite }, // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_ACCESS             Pci;
-  MockPciRootBridgeCopyMem,                                // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_COPY_MEM           CopyMem;
-  MockPciRootBridgeMap,                                    // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_MAP                Map;
-  MockPciRootBridgeUnMap,                                  // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_UNMAP              Unmap;
-  MockPciRootBridgeAllocateBuffer,                         // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_ALLOCATE_BUFFER    AllocateBuffer;
-  MockPciRootBridgeFreeBuffer,                             // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_FREE_BUFFER        FreeBuffer;
-  MockPciRootBridgeFlush,                                  // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_FLUSH              Flush;
-  MockPciRootBridgeGetAttributes,                          // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_GET_ATTRIBUTES     GetAttributes;
-  MockPciRootBridgeSetAttributes,                          // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_SET_ATTRIBUTES     SetAttributes;
-  MockPciRootBridgeConfiguration,                          // EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL_CONFIGURATION      Configuration;
-};
-
-extern "C"
-{
-  extern EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL  *gPciRootBridgeIoProtocol = &PCI_ROOT_BRIDGE_IO_PROTOCOL_MOCK;
-}
+#define MOCK_PCI_ROOT_BRIDGE_IO_PROTOCOL_INSTANCE(NAME)   \
+EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL NAME##_INSTANCE = {       \
+  NULL,                                                   \
+  MockPciRootBridgePollMem,                               \
+  MockPciRootBridgePollIo,                                \
+  { MockPciRootBridgeMemRead, MockPciRootBridgeMemWrite },\
+  { MockPciRootBridgeIoRead,  MockPciRootBridgeIoWrite  },\
+  { MockPciRootBridgePciRead, MockPciRootBridgePciWrite },\
+  MockPciRootBridgeCopyMem,                               \
+  MockPciRootBridgeMap,                                   \
+  MockPciRootBridgeUnMap,                                 \
+  MockPciRootBridgeAllocateBuffer,                        \
+  MockPciRootBridgeFreeBuffer,                            \
+  MockPciRootBridgeFlush,                                 \
+  MockPciRootBridgeGetAttributes,                         \
+  MockPciRootBridgeSetAttributes,                         \
+  MockPciRootBridgeConfiguration,                         \
+};                                                        \
+EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL *NAME = &NAME##_INSTANCE;
 
 #endif // MOCK_PCIIOPROTOCOL_H

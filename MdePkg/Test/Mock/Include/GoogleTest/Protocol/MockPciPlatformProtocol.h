@@ -80,15 +80,13 @@ MOCK_FUNCTION_DEFINITION (MockPciPlatformGetPlatformPolicy, MockGetPlatformPolic
 MOCK_INTERFACE_DEFINITION (MockPciPlatformGetPciRom);
 MOCK_FUNCTION_DEFINITION (MockPciPlatformGetPciRom, MockGetPciRom, 4, EFIAPI);
 
-EFI_PCI_PLATFORM_PROTOCOL  EFI_PCI_PLATFORM_PROTOCOL_MOCK = {
-  MockPlatformNotify,         // EFI_PCI_PLATFORM_PHASE_NOTIFY
-  MockPlatformPrepController, // EFI_PCI_PLATFORM_PREPROCESS_CONTROLLER
-  MockGetPlatformPolicy,      // EFI_PCI_PLATFORM_GET_PLATFORM_POLICY
-  MockGetPciRom,              // EFI_PCI_PLATFORM_GET_PCI_ROM
-};
-
-extern "C" {
-  extern EFI_PCI_PLATFORM_PROTOCOL  *gPciPlatformProtocol = &EFI_PCI_PLATFORM_PROTOCOL_MOCK;
-}
+#define MOCK_EFI_PCI_PLATFORM_PROTOCOL_INSTANCE(NAME)  \
+EFI_PCI_PLATFORM_PROTOCOL NAME##_INSTANCE = {          \
+  MockPlatformNotify,                                  \
+  MockPlatformPrepController,                          \
+  MockGetPlatformPolicy,                               \
+  MockGetPciRom,                                       \
+};                                                     \
+EFI_PCI_PLATFORM_PROTOCOL *NAME = &NAME##_INSTANCE;
 
 #endif // MOCK_PCIPLATFORMPROTOCOL_H
