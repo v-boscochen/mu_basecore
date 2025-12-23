@@ -794,6 +794,7 @@ PiSmmCpuEntryCommon (
   PERF_FUNCTION_BEGIN ();
 
   mSmmRebootOnException = PcdGetBool (PcdSmmExceptionRebootInsteadOfHaltDefault); // MS_CHANGE
+  DEBUG ((DEBUG_INFO, "%a mSmmRebootOnException %x \n", __func__, mSmmRebootOnException));
 
   //
   // Initialize address fixup
@@ -1611,6 +1612,7 @@ EnableSmmExceptionTestMode (
 {
   EFI_STATUS  Status = EFI_UNSUPPORTED;
 
+  DEBUG ((DEBUG_INFO, "%a \n", __func__));
   if (FeaturePcdGet (PcdSmmExceptionTestModeSupport)) {
     DEBUG ((DEBUG_INFO, "%a - Test mode enabled!\n", __func__));
     mSmmRebootOnException = TRUE;

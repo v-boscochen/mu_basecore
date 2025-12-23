@@ -881,6 +881,7 @@ SmiPFHandler (
   goto Exit;
 
 HaltOrReboot:
+  DEBUG ((DEBUG_ERROR, "%a - mSmmRebootOnException %x\n", __func__, mSmmRebootOnException));
   if (mSmmRebootOnException) {
     DEBUG ((DEBUG_ERROR, "%a - Reboot here in test mode.\n", __func__));
     ResetWarm ();
