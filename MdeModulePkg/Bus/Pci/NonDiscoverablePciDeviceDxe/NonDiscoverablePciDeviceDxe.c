@@ -9,13 +9,14 @@
 #include "NonDiscoverablePciDeviceIo.h"
 
 #include <Protocol/DriverBinding.h>
-// MU_CHANGE [BEGIN]
-#include <Protocol/NonDiscoverableDeviceUniqueId.h>
 
+// MU_CHANGE [BEGIN]: Counter-based UniqueId allocation replaced by
+// platform-supplied UniqueId on NON_DISCOVERABLE_DEVICE.
 // #define MAX_NON_DISCOVERABLE_PCI_DEVICE_ID  (32 * 256)
+//
+// STATIC UINTN           mUniqueIdCounter = 0;
 // MU_CHANGE [END]
 
-STATIC UINTN           mUniqueIdCounter = 0;
 EFI_CPU_ARCH_PROTOCOL  *mCpu;
 
 //
@@ -150,16 +151,21 @@ NonDiscoverablePciDeviceStart (
 {
   NON_DISCOVERABLE_PCI_DEVICE  *Dev;
   EFI_STATUS                   Status;
-  // MU_CHANGE [BEGIN]
-  NON_DISCOVERABLE_DEVICE_UNIQUE_ID_PROTOCOL  *UniqueIdProtocol;
+  // MU_CHANGE [BEGIN]: Locals for duplicate UniqueId detection.
+  UINTN                    HandleCount;
+  EFI_HANDLE               *HandleBuffer;
+  UINTN                    Index;
+  NON_DISCOVERABLE_DEVICE  *OtherDevice;
 
+  // MU_CHANGE [END]
+
+  // MU_CHANGE [BEGIN]: mUniqueIdCounter limit check no longer needed; the
+  // platform supplies UniqueId via NON_DISCOVERABLE_DEVICE.
   // ASSERT (mUniqueIdCounter < MAX_NON_DISCOVERABLE_PCI_DEVICE_ID);
   // if (mUniqueIdCounter >= MAX_NON_DISCOVERABLE_PCI_DEVICE_ID) {
-  ASSERT (mUniqueIdCounter < (MAX_NON_DISCOVERABLE_PCI_DEVICE_ID / 2));
-  if (mUniqueIdCounter >= (MAX_NON_DISCOVERABLE_PCI_DEVICE_ID / 2)) {
-    // MU_CHANGE [END]
-    return EFI_OUT_OF_RESOURCES;
-  }
+  //   return EFI_OUT_OF_RESOURCES;
+  // }
+  // MU_CHANGE [END]
 
   Dev = AllocateZeroPool (sizeof *Dev);
   if (Dev == NULL) {
@@ -178,6 +184,54 @@ NonDiscoverablePciDeviceStart (
     goto FreeDev;
   }
 
+  // MU_CHANGE [BEGIN]: Reject duplicate UniqueId across NonDiscoverableDevice
+  // handles. Every registered device is exposed via
+  // gEdkiiNonDiscoverableDeviceProtocolGuid, so we enumerate the currently
+  // installed handles and compare their UniqueId against the one the platform
+  // assigned to us. If any other handle already advertises the same UniqueId,
+  // refuse to start so the platform is forced to assign a distinct ID. Runs
+  // before InstallProtocolInterface so the failure path is a plain
+  // goto CloseProtocol.
+  HandleCount  = 0;
+  HandleBuffer = NULL;
+  Status       = gBS->LocateHandleBuffer (
+                        ByProtocol,
+                        &gEdkiiNonDiscoverableDeviceProtocolGuid,
+                        NULL,
+                        &HandleCount,
+                        &HandleBuffer
+                        );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: LocateHandleBuffer failed: %r\n", __func__, Status));
+    goto CloseProtocol;
+  }
+
+  for (Index = 0; Index < HandleCount; Index++) {
+    // Skip our own handle
+    if (HandleBuffer[Index] == DeviceHandle) {
+      continue;
+    }
+
+    Status = gBS->HandleProtocol (
+                    HandleBuffer[Index],
+                    &gEdkiiNonDiscoverableDeviceProtocolGuid,
+                    (VOID **)&OtherDevice
+                    );
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    if (OtherDevice->UniqueId == Dev->Device->UniqueId) {
+      DEBUG ((DEBUG_ERROR, "%a: duplicate NonDiscoverableDevice UniqueId 0x%llx\n", __func__, Dev->Device->UniqueId));
+      Status = EFI_DEVICE_ERROR;
+      FreePool (HandleBuffer);
+      goto CloseProtocol;
+    }
+  }
+
+  FreePool (HandleBuffer);
+  // MU_CHANGE [END]
+
   InitializePciIoProtocol (Dev);
 
   //
@@ -195,43 +249,18 @@ NonDiscoverablePciDeviceStart (
     goto CloseProtocol;
   }
 
-  // MU_CHANGE [BEGIN]
-  Status = gBS->HandleProtocol (DeviceHandle, &gEdkiiNonDiscoverableDeviceUniqueIdProtocolGuid, (VOID **)&UniqueIdProtocol);
-  if (Status == EFI_SUCCESS) {
-    if (UniqueIdProtocol->Revision != NON_DISCOVERABLE_DEVICE_UNIQUE_ID_PROTOCOL_REVISION) {
-      DEBUG ((
-        DEBUG_ERROR,
-        "%a: UniqueId protocol revision mismatch. Expected %d, got %d\n",
-        __func__,
-        NON_DISCOVERABLE_DEVICE_UNIQUE_ID_PROTOCOL_REVISION,
-        UniqueIdProtocol->Revision
-        ));
-      Status = EFI_INCOMPATIBLE_VERSION;
-      goto CloseProtocol;
-    }
+  // MU_CHANGE [BEGIN]: Use platform-supplied UniqueId from NON_DISCOVERABLE_DEVICE.
+  Dev->UniqueId = Dev->Device->UniqueId;
+  // MU_CHANGE [END]
 
-    if ((UniqueIdProtocol->UniqueId < (MAX_NON_DISCOVERABLE_PCI_DEVICE_ID / 2)) || (UniqueIdProtocol->UniqueId >= MAX_NON_DISCOVERABLE_PCI_DEVICE_ID)) {
-      DEBUG ((
-        DEBUG_ERROR,
-        "%a: UniqueId Protocol failed. UniqueId=0x%llx must be greater than or equal to 0x%llx and less than 0x%llx.\n",
-        __func__,
-        UniqueIdProtocol->UniqueId,
-        (MAX_NON_DISCOVERABLE_PCI_DEVICE_ID / 2),
-        MAX_NON_DISCOVERABLE_PCI_DEVICE_ID
-        ));
-      Status = EFI_INCOMPATIBLE_VERSION;
-      goto CloseProtocol;
-    }
+  // MU_CHANGE [BEGIN]: UniqueId is now copied from NON_DISCOVERABLE_DEVICE
+  // above instead of being assigned from a counter here.
+  // Dev->UniqueId = mUniqueIdCounter++;
+  // MU_CHANGE [END]
 
-    // Assign UniqueId from protocol if available.
-    Dev->UniqueId = UniqueIdProtocol->UniqueId;
-    DEBUG ((DEBUG_VERBOSE, "%a: UniqueId=0x%llx\n", __func__, Dev->UniqueId));
-  } else {
-    // Otherwise, backup and assign from counter.
-    Dev->UniqueId = mUniqueIdCounter++;
-    DEBUG ((DEBUG_VERBOSE, "%a: UniqueId Protocol failed. Backup to mUniqueIdCounter=0x%llx\n", __func__, Dev->UniqueId));
-  }
-
+  // MU_CHANGE [BEGIN]: Remember the controller handle so PciIoMap/SetAttribute
+  // can pass it to IoMmuSetAttribute for DMA identifier resolution.
+  Dev->Handle = DeviceHandle;
   // MU_CHANGE [END]
 
   return EFI_SUCCESS;
