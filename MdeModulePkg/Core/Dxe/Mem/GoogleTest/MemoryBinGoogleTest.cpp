@@ -1,5 +1,3 @@
-// MU_CHANGE: PEI Bins - Whole File
-
 /** @file
   Unit tests for BaseMemoryBinLib library.
 
@@ -27,23 +25,23 @@ extern "C" {
   BOOLEAN  mMemoryTypeInformationInitialized = FALSE;
 
   EFI_MEMORY_TYPE_STATISTICS  mMemoryTypeStatistics[EfiMaxMemoryType + 1] = {
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE, FALSE }, // EfiReservedMemoryType
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiLoaderCode
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiLoaderData
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiBootServicesCode
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiBootServicesData
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  TRUE,  FALSE }, // EfiRuntimeServicesCode
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  TRUE,  FALSE }, // EfiRuntimeServicesData
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiConventionalMemory
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiUnusableMemory
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE, FALSE }, // EfiACPIReclaimMemory
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE, FALSE }, // EfiACPIMemoryNVS
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiMemoryMappedIO
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiMemoryMappedIOPortSpace
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  TRUE,  FALSE }, // EfiPalCode
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE }, // EfiPersistentMemory
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE, FALSE }, // EfiUnacceptedMemoryType
-    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE, FALSE } // EfiMaxMemoryType
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE }, // EfiReservedMemoryType
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiLoaderCode
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiLoaderData
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiBootServicesCode
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiBootServicesData
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  TRUE  }, // EfiRuntimeServicesCode
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  TRUE  }, // EfiRuntimeServicesData
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiConventionalMemory
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiUnusableMemory
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE }, // EfiACPIReclaimMemory
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE }, // EfiACPIMemoryNVS
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiMemoryMappedIO
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiMemoryMappedIOPortSpace
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  TRUE  }, // EfiPalCode
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE }, // EfiPersistentMemory
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, TRUE,  FALSE }, // EfiUnacceptedMemoryType
+    { 0, MAX_ALLOC_ADDRESS, 0, 0, EfiMaxMemoryType, FALSE, FALSE } // EfiMaxMemoryType
   };
 
   EFI_PHYSICAL_ADDRESS  mDefaultMaximumAddress = MAX_ALLOC_ADDRESS;
@@ -96,7 +94,6 @@ protected:
       mMemoryTypeStatistics[i].CurrentNumberOfPages = 0;
       mMemoryTypeStatistics[i].NumberOfPages        = 0;
       mMemoryTypeStatistics[i].InformationIndex     = EfiMaxMemoryType;
-      mMemoryTypeStatistics[i].DefaultBin           = FALSE;
     }
 
     mMemoryTypeStatistics[EfiReservedMemoryType].Special   = TRUE;
@@ -118,7 +115,7 @@ protected:
 TEST_F (BaseMemoryBinLibTest, CalculateTotalMemoryBinSizeNeededReturnsZeroWhenNoPagesAllocated) {
   UINT64  TotalSize;
 
-  TotalSize = CalculateTotalMemoryBinSizeNeeded (0, gMemoryTypeInformation);
+  TotalSize = CalculateTotalMemoryBinSizeNeeded (NULL, gMemoryTypeInformation);
 
   ASSERT_EQ (TotalSize, (UINT64)0);
 }
@@ -135,7 +132,7 @@ TEST_F (BaseMemoryBinLibTest, CalculateTotalMemoryBinSizeNeededCalculatesCorrect
   gMemoryTypeInformation[1].NumberOfPages = 20;
   gMemoryTypeInformation[2].Type          = EfiMaxMemoryType;
 
-  TotalSize = CalculateTotalMemoryBinSizeNeeded (0, gMemoryTypeInformation);
+  TotalSize = CalculateTotalMemoryBinSizeNeeded (NULL, gMemoryTypeInformation);
 
   ASSERT_EQ (TotalSize, (UINT64)(30 * EFI_PAGE_SIZE));
 }
@@ -467,6 +464,58 @@ TEST_F (BaseMemoryBinLibTest, PopulatesFromValidHob) {
   ASSERT_EQ (gMemoryTypeInformation[4].NumberOfPages, (UINT32)25);
   ASSERT_EQ (gMemoryTypeInformation[5].Type, (UINT32)EfiPalCode);
   ASSERT_EQ (gMemoryTypeInformation[5].NumberOfPages, (UINT32)8);
+}
+
+//
+// Test: PopulateMemoryTypeInformation zeroes all pages when HOB is corrupted
+// (i.e. it does not terminate in an EfiMaxMemoryType entry)
+//
+TEST_F (BaseMemoryBinLibTest, ZeroesAllPagesWhenHobIsCorrupted) {
+  EFI_STATUS                   Status;
+  UINT8                        GuidHobBuffer[sizeof (EFI_HOB_GUID_TYPE) + sizeof (EFI_MEMORY_TYPE_INFORMATION) * 7];
+  EFI_HOB_GUID_TYPE            *GuidHob;
+  EFI_MEMORY_TYPE_INFORMATION  *MemTypeInfo;
+
+  ZeroMem (GuidHobBuffer, sizeof (GuidHobBuffer));
+  GuidHob                   = (EFI_HOB_GUID_TYPE *)GuidHobBuffer;
+  GuidHob->Header.HobType   = EFI_HOB_TYPE_GUID_EXTENSION;
+  GuidHob->Header.HobLength = sizeof (GuidHobBuffer);
+  CopyGuid (&GuidHob->Name, &gEfiMemoryTypeInformationGuid);
+
+  //
+  // Populate every entry with a valid type and a non-zero page count, but
+  // deliberately omit the terminating EfiMaxMemoryType entry to corrupt the HOB.
+  //
+  MemTypeInfo                  = (EFI_MEMORY_TYPE_INFORMATION *)(GuidHob + 1);
+  MemTypeInfo[0].Type          = EfiReservedMemoryType;
+  MemTypeInfo[0].NumberOfPages = 5;
+  MemTypeInfo[1].Type          = EfiRuntimeServicesCode;
+  MemTypeInfo[1].NumberOfPages = 10;
+  MemTypeInfo[2].Type          = EfiRuntimeServicesData;
+  MemTypeInfo[2].NumberOfPages = 15;
+  MemTypeInfo[3].Type          = EfiACPIReclaimMemory;
+  MemTypeInfo[3].NumberOfPages = 20;
+  MemTypeInfo[4].Type          = EfiACPIMemoryNVS;
+  MemTypeInfo[4].NumberOfPages = 25;
+  MemTypeInfo[5].Type          = EfiPalCode;
+  MemTypeInfo[5].NumberOfPages = 8;
+  MemTypeInfo[6].Type          = EfiBootServicesData;
+  MemTypeInfo[6].NumberOfPages = 30;
+
+  EXPECT_CALL (HobLib, GetFirstGuidHob (&gEfiMemoryTypeInformationGuid))
+    .WillOnce (Return ((VOID *)GuidHob));
+
+  Status = PopulateMemoryTypeInformation (gMemoryTypeInformation);
+
+  ASSERT_EQ (Status, EFI_NOT_FOUND);
+
+  //
+  // Regardless of the page counts present in the corrupted HOB, every entry
+  // should have been reset to zero pages.
+  //
+  for (UINTN Index = 0; gMemoryTypeInformation[Index].Type != EfiMaxMemoryType; Index++) {
+    ASSERT_EQ (gMemoryTypeInformation[Index].NumberOfPages, (UINT32)0);
+  }
 }
 
 //

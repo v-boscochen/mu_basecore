@@ -13,7 +13,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include "DxeMain.h"
 #include "Gcd.h"
 #include "Mem/HeapGuard.h"
-#include <MemoryBin.h>             // MU_CHANGE: PEI Bins
 
 #define MINIMUM_INITIAL_MEMORY_SIZE  0x10000
 
@@ -2165,33 +2164,6 @@ CoreConvertResourceDescriptorHobAttributesToCapabilities (
   return Capabilities;
 }
 
-// MU_CHANGE BEGIN: PEI Bins - Moved to MemoryBin.c
-// /**
-//   Calculate total memory bin size neeeded.
-//
-//   @return The total memory bin size neeeded.
-//
-// **/
-// UINT64
-// CalculateTotalMemoryBinSizeNeeded (
-//   VOID
-//   )
-// {
-//   UINTN   Index;
-//   UINT64  TotalSize;
-//
-//   //
-//   // Loop through each memory type in the order specified by the gMemoryTypeInformation[] array
-//   //
-//   TotalSize = 0;
-//   for (Index = 0; gMemoryTypeInformation[Index].Type != EfiMaxMemoryType; Index++) {
-//     TotalSize += LShiftU64 (gMemoryTypeInformation[Index].NumberOfPages, EFI_PAGE_SHIFT);
-//   }
-//
-//   return TotalSize;
-// }
-// MU_CHANGE END: PEI Bins
-
 /**
    Find the largest region in the specified region that is not covered by an existing memory allocation
 
@@ -2272,29 +2244,23 @@ CoreInitializeMemoryServices (
   OUT UINT64                *MemoryLength
   )
 {
-  EFI_PEI_HOB_POINTERS  Hob;
-  // MU_CHANGE BEGIN: PEI Bins
-  // EFI_MEMORY_TYPE_INFORMATION  *EfiMemoryTypeInformation;
-  // UINTN                        DataSize;
-  // MU_CHANGE END: PEI Bins
+  EFI_PEI_HOB_POINTERS         Hob;
   BOOLEAN                      Found;
   EFI_HOB_HANDOFF_INFO_TABLE   *PhitHob;
   EFI_HOB_RESOURCE_DESCRIPTOR  *ResourceHob;
   EFI_HOB_RESOURCE_DESCRIPTOR  *PhitResourceHob;
   EFI_HOB_RESOURCE_DESCRIPTOR  *MemoryTypeInformationResourceHob;
-  // UINTN                        Count;  // MU_CHANGE: PEI Bins
-  EFI_PHYSICAL_ADDRESS  BaseAddress;
-  UINT64                Length;
-  UINT64                Attributes;
-  UINT64                Capabilities;
-  EFI_PHYSICAL_ADDRESS  TestedMemoryBaseAddress;
-  UINT64                TestedMemoryLength;
-  EFI_PHYSICAL_ADDRESS  HighAddress;
-  // EFI_HOB_GUID_TYPE            *GuidHob;  // MU_CHANGE: PEI Bins
-  UINT32                ReservedCodePageNumber;
-  UINT64                MinimalMemorySizeNeeded;
-  EFI_PHYSICAL_ADDRESS  ResourceHobMemoryTop;
-  EFI_STATUS            Status;         // MU_CHANGE: PEI Bins
+  EFI_PHYSICAL_ADDRESS         BaseAddress;
+  UINT64                       Length;
+  UINT64                       Attributes;
+  UINT64                       Capabilities;
+  EFI_PHYSICAL_ADDRESS         TestedMemoryBaseAddress;
+  UINT64                       TestedMemoryLength;
+  EFI_PHYSICAL_ADDRESS         HighAddress;
+  UINT32                       ReservedCodePageNumber;
+  UINT64                       MinimalMemorySizeNeeded;
+  EFI_PHYSICAL_ADDRESS         ResourceHobMemoryTop;
+  EFI_STATUS                   Status;
 
   //
   // Point at the first HOB.  This must be the PHIT HOB.
@@ -2333,54 +2299,11 @@ CoreInitializeMemoryServices (
                                                                   + EFI_PAGES_TO_SIZE (ReservedCodePageNumber);
   }
 
-  // MU_CHANGE BEGIN: PEI Bins - Replaced inline HOB search with shared MemoryBin functions
-  // //
-  // // See if a Memory Type Information HOB is available
-  // //
-  // MemoryTypeInformationResourceHob = NULL;
-  // GuidHob                          = GetFirstGuidHob (&gEfiMemoryTypeInformationGuid);
-  // if (GuidHob != NULL) {
-  //   EfiMemoryTypeInformation = GET_GUID_HOB_DATA (GuidHob);
-  //   DataSize                 = GET_GUID_HOB_DATA_SIZE (GuidHob);
-  //   if ((EfiMemoryTypeInformation != NULL) && (DataSize > 0) && (DataSize <= (EfiMaxMemoryType + 1) * sizeof (EFI_MEMORY_TYPE_INFORMATION))) {
-  //     CopyMem (&gMemoryTypeInformation, EfiMemoryTypeInformation, DataSize);
   //
-  //     //
-  //     // Look for Resource Descriptor HOB with a ResourceType of System Memory
-  //     // and an Owner GUID of gEfiMemoryTypeInformationGuid. If more than 1 is
-  //     // found, then set MemoryTypeInformationResourceHob to NULL.
-  //     //
-  //     Count = 0;
-  //     for (Hob.Raw = *HobStart; !END_OF_HOB_LIST (Hob); Hob.Raw = GET_NEXT_HOB (Hob)) {
-  //       if ((GET_HOB_TYPE (Hob) != EFI_HOB_TYPE_RESOURCE_DESCRIPTOR) && (GET_HOB_TYPE (Hob) != EFI_HOB_TYPE_RESOURCE_DESCRIPTOR2)) {
-  //         continue;
-  //       }
+  // See if a Memory Type Information HOB is available
   //
-  //       ResourceHob = Hob.ResourceDescriptor;
-  //       if (!CompareGuid (&ResourceHob->Owner, &gEfiMemoryTypeInformationGuid)) {
-  //         continue;
-  //       }
-  //
-  //       Count++;
-  //       if (ResourceHob->ResourceType != EFI_RESOURCE_SYSTEM_MEMORY) {
-  //         continue;
-  //       }
-  //
-  //       if ((ResourceHob->ResourceAttribute & MEMORY_ATTRIBUTE_MASK) != TESTED_MEMORY_ATTRIBUTES) {
-  //         continue;
-  //       }
-  //
-  //       if (ResourceHob->ResourceLength >= CalculateTotalMemoryBinSizeNeeded ()) {
-  //         MemoryTypeInformationResourceHob = ResourceHob;
-  //       }
-  //     }
-  //
-  //     if (Count > 1) {
-  //       MemoryTypeInformationResourceHob = NULL;
-  //     }
-  //   }
-  // }
-  Status = PopulateMemoryTypeInformation (gMemoryTypeInformation);
+  MemoryTypeInformationResourceHob = NULL;
+  Status                           = PopulateMemoryTypeInformation (gMemoryTypeInformation);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_WARN, "No Memory Type Information HOB found, S4 resume will likely fail\n"));
   }
@@ -2393,8 +2316,7 @@ CoreInitializeMemoryServices (
   //
   // Include the total memory bin size needed to make sure memory bin could be allocated successfully.
   //
-  MinimalMemorySizeNeeded = MINIMUM_INITIAL_MEMORY_SIZE + CalculateTotalMemoryBinSizeNeeded (0, gMemoryTypeInformation);
-  // MU_CHANGE END: PEI Bins
+  MinimalMemorySizeNeeded = MINIMUM_INITIAL_MEMORY_SIZE + CalculateTotalMemoryBinSizeNeeded (NULL, gMemoryTypeInformation);
 
   //
   // Find the Resource Descriptor HOB that contains PHIT range EfiFreeMemoryBottom..EfiFreeMemoryTop
@@ -2427,7 +2349,9 @@ CoreInitializeMemoryServices (
       continue;
     }
 
-    // MU_CHANGE START - Check for potential overflow before addition
+    //
+    // Check for potential overflow before addition
+    //
     if (ResourceHob->PhysicalStart > MAX_UINT64 - ResourceHob->ResourceLength) {
       ASSERT (FALSE);
       ResourceHobMemoryTop = MAX_UINT64;
@@ -2436,7 +2360,6 @@ CoreInitializeMemoryServices (
     }
 
     if (PhitHob->EfiFreeMemoryTop > ResourceHobMemoryTop) {
-      // MU_CHANGE END - Check for potential overflow before addition
       continue;
     }
 
@@ -2460,17 +2383,8 @@ CoreInitializeMemoryServices (
     //
     Attributes  = PhitResourceHob->ResourceAttribute;
     BaseAddress = PageAlignAddress (PhitHob->EfiMemoryTop);
-
-    // MU_CHANGE START - Check for potential underflow before subtraction
-    if (BaseAddress > ResourceHobMemoryTop) {
-      Length = 0;
-    } else {
-      Length = PageAlignLength (ResourceHobMemoryTop - BaseAddress);
-      FindLargestFreeRegion (&BaseAddress, &Length, (EFI_HOB_MEMORY_ALLOCATION *)GetFirstHob (EFI_HOB_TYPE_MEMORY_ALLOCATION));
-    }
-
-    // MU_CHANGE END - Check for potential underflow before subtraction
-
+    Length      = PageAlignLength (ResourceHobMemoryTop - BaseAddress);
+    FindLargestFreeRegion (&BaseAddress, &Length, (EFI_HOB_MEMORY_ALLOCATION *)GetFirstHob (EFI_HOB_TYPE_MEMORY_ALLOCATION));
     if (Length < MinimalMemorySizeNeeded) {
       //
       // If that range is not large enough to intialize the DXE Core, then
@@ -2546,7 +2460,9 @@ CoreInitializeMemoryServices (
         continue;
       }
 
-      // MU_CHANGE START - Check for potential overflow before addition
+      //
+      // Check for potential overflow before addition
+      //
       if (ResourceHob->PhysicalStart > MAX_UINT64 - ResourceHob->ResourceLength) {
         ASSERT (FALSE);
         ResourceHobMemoryTop = MAX_UINT64;
@@ -2555,7 +2471,6 @@ CoreInitializeMemoryServices (
       }
 
       if (ResourceHobMemoryTop > (EFI_PHYSICAL_ADDRESS)MAX_ALLOC_ADDRESS) {
-        // MU_CHANGE END - Check for potential overflow before addition
         continue;
       }
 
@@ -2570,7 +2485,7 @@ CoreInitializeMemoryServices (
       // Skip Resource Descriptor HOBs that are not large enough to initilize the DXE Core
       //
       TestedMemoryBaseAddress = PageAlignAddress (ResourceHob->PhysicalStart);
-      TestedMemoryLength      = PageAlignLength (ResourceHobMemoryTop - TestedMemoryBaseAddress); // MU_CHANGE
+      TestedMemoryLength      = PageAlignLength (ResourceHobMemoryTop - TestedMemoryBaseAddress);
       FindLargestFreeRegion (&TestedMemoryBaseAddress, &TestedMemoryLength, (EFI_HOB_MEMORY_ALLOCATION *)GetFirstHob (EFI_HOB_TYPE_MEMORY_ALLOCATION));
       if (TestedMemoryLength < MinimalMemorySizeNeeded) {
         continue;
@@ -2603,20 +2518,12 @@ CoreInitializeMemoryServices (
     Capabilities = CoreConvertResourceDescriptorHobAttributesToCapabilities (EfiGcdMemoryTypeSystemMemory, Attributes);
   }
 
-  // MU_CHANGE BEGIN: PEI Bins
-  // if (MemoryTypeInformationResourceHob != NULL) {
-  if ((Status == EFI_SUCCESS) && (MemoryTypeInformationResourceHob != NULL)) {
-    // MU_CHANGE END: PEI Bins
+  if (MemoryTypeInformationResourceHob != NULL) {
     //
     // If a Memory Type Information Resource HOB was found, then use the address
     // range of the  Memory Type Information Resource HOB as the preferred
     // address range for the Memory Type Information bins.
     //
-    // MU_CHANGE BEGIN: PEI Bins
-    // CoreSetMemoryTypeInformationRange (
-    //   MemoryTypeInformationResourceHob->PhysicalStart,
-    //   MemoryTypeInformationResourceHob->ResourceLength
-    //   );
     CoreSetMemoryTypeInformationRange (
       MemoryTypeInformationResourceHob->PhysicalStart,
       MemoryTypeInformationResourceHob->ResourceLength,
@@ -2625,7 +2532,6 @@ CoreInitializeMemoryServices (
       mMemoryTypeStatistics,
       &mDefaultMaximumAddress
       );
-    // MU_CHANGE END: PEI Bins
   }
 
   //
@@ -2874,7 +2780,6 @@ CoreInitializeGcdServices (
             Descriptor.Capabilities & (~EFI_MEMORY_RUNTIME)
             );
 
-          // MU_CHANGE BEGIN: PEI Bins - Update memory bin statistics from PEI allocation HOBs
           // if this Memory Allocation HOB came from PEI, update the memory bin statistics
           if (CompareGuid (&MemoryHob->AllocDescriptor.Name, &gEfiMemoryTypeInformationGuid)) {
             UpdateMemoryStatistics (
@@ -2889,8 +2794,6 @@ CoreInitializeGcdServices (
               mDefaultMaximumAddress
               );
           }
-
-          // MU_CHANGE END: PEI Bins
         }
       }
     }

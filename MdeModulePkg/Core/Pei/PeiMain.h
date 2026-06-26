@@ -51,7 +51,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Guid/AprioriFileName.h>
 #include <Guid/MigratedFvInfo.h>
 #include <Guid/DelayedDispatch.h>
-#include <Guid/MemoryTypeInformation.h>     // MU_CHANGE: PEI Bins
+#include <Guid/MemoryTypeInformation.h>
+#include <MemoryBin.h>
 
 ///
 /// It is an FFS type extension used for PeiFindFileEx. It indicates current
@@ -337,9 +338,6 @@ struct _PEI_CORE_INSTANCE {
   //
   DELAYED_DISPATCH_TABLE            *DelayedDispatchTable;
 
-  EFI_PHYSICAL_ADDRESS              PlatformBlob;             // MU_CHANGE  Used by AdvancedLogger
-
-  // MU_CHANGE BEGIN: PEI Bins
   //
   // Whether memory bins are initialized and being used in PEI
   //
@@ -356,7 +354,8 @@ struct _PEI_CORE_INSTANCE {
   // This is used for the memory bin feature, if enabled, to track bin locations.
   //
   EFI_MEMORY_TYPE_STATISTICS        *MemoryTypeStatistics;
-  // MU_CHANGE END: PEI Bins
+
+  EFI_PHYSICAL_ADDRESS              PlatformBlob;             // MU_CHANGE  Used by AdvancedLogger
 };
 
 ///

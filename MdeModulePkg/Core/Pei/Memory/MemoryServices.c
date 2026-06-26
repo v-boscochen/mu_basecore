@@ -7,12 +7,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #include "PeiMain.h"
-// MU_CHANGE BEGIN: PEI Bins
 #include <Guid/MemoryTypeInformation.h>
 #include <MemoryBin.h>
-// MU_CHANGE END: PEI Bins
-
-// MU_CHANGE BEGIN: PEI Bins
 
 /**
   Initialize memory type information bins based on the memory type information HOB.
@@ -89,7 +85,7 @@ Fixup_PHIT:
 
   // Find max/min addresses of the bins
   for (Index = 0; (EFI_MEMORY_TYPE)Index < EfiMaxMemoryType; Index++) {
-    if ((PrivateData->MemoryTypeStatistics[Index].NumberOfPages != 0) && !PrivateData->MemoryTypeStatistics[Index].DefaultBin) {
+    if ((PrivateData->MemoryTypeStatistics[Index].NumberOfPages != 0) && (PrivateData->MemoryTypeStatistics[Index].MaximumAddress != 0)) {
       if ((PrivateData->MemoryTypeStatistics[Index].BaseAddress < BaseBinAddress) || (BaseBinAddress == 0)) {
         BaseBinAddress = PrivateData->MemoryTypeStatistics[Index].BaseAddress;
       }
@@ -100,14 +96,11 @@ Fixup_PHIT:
     }
   }
 
-  DEBUG ((DEBUG_INFO, "%a: Memory bins address range 0x%llx - 0x%llx\n", __func__, BaseBinAddress, EndBinAddress));
   // The bins may or may not intersect the PHIT
   if ((Hob.HandoffInformationTable->EfiFreeMemoryTop > BaseBinAddress) && (Hob.HandoffInformationTable->EfiFreeMemoryBottom < EndBinAddress)) {
     Hob.HandoffInformationTable->EfiFreeMemoryTop = BaseBinAddress;
   }
 }
-
-// MU_CHANGE END: PEI Bins
 
 /**
 
@@ -128,12 +121,9 @@ InitializeMemoryServices (
   IN PEI_CORE_INSTANCE           *OldCoreData
   )
 {
-  // MU_CHANGE BEGIN: PEI Bins
   VOID             *HobList;
   EFI_STATUS       Status;
   EFI_MEMORY_TYPE  Type;
-
-  // MU_CHANGE END: PEI Bins
 
   PrivateData->SwitchStackSignal = FALSE;
 
@@ -155,7 +145,6 @@ InitializeMemoryServices (
     // Set Ps to point to ServiceTableShadow in Cache
     //
     PrivateData->Ps = &(PrivateData->ServiceTableShadow);
-    // MU_CHANGE BEGIN: PEI Bins
   } else {
     // We have permanent memory now, so we should set up the memory bins if we can. No matter what, initialize the
     // structures
@@ -209,7 +198,7 @@ InitializeMemoryServices (
         //
         DEBUG ((
           DEBUG_ERROR,
-          "Memory Type Information HOB not found during memory services initialization but PPI was produced\n"
+          "Memory Type Information HOB not found during memory services initialization but PCD was set\n"
           ));
         ASSERT_EFI_ERROR (Status);
         return;
@@ -217,8 +206,6 @@ InitializeMemoryServices (
 
       InitializeMemoryTypeInformationBins (PrivateData, &HobList);
     }
-
-    // MU_CHANGE END: PEI Bins
   }
 
   return;
@@ -438,7 +425,6 @@ ConvertMemoryAllocationHobs (
   @param[in] MemoryType         The type of memory allocated by this HOB.
 
 **/
-// MU_CHANGE BEGIN: PEI Bins - Added PeiServices parameter and reworked HOB creation logic
 VOID
 InternalBuildMemoryAllocationHob (
   IN CONST EFI_PEI_SERVICES  **PeiServices,
@@ -515,8 +501,6 @@ InternalBuildMemoryAllocationHob (
   ZeroMem (MemoryAllocationHob->AllocDescriptor.Reserved, sizeof (MemoryAllocationHob->AllocDescriptor.Reserved));
 }
 
-// MU_CHANGE END: PEI Bins
-
 /**
   Update or split memory allocation HOB for memory pages allocate and free.
 
@@ -530,7 +514,6 @@ InternalBuildMemoryAllocationHob (
                                         others for pages allocate.
 
 **/
-// MU_CHANGE BEGIN: PEI Bins - Added PeiServices parameter
 VOID
 UpdateOrSplitMemoryAllocationHob (
   IN CONST EFI_PEI_SERVICES         **PeiServices,
@@ -573,8 +556,6 @@ UpdateOrSplitMemoryAllocationHob (
   MemoryAllocationHob->AllocDescriptor.MemoryLength      = Bytes;
   MemoryAllocationHob->AllocDescriptor.MemoryType        = MemoryType;
 }
-
-// MU_CHANGE END: PEI Bins
 
 /**
   Merge adjacent free memory ranges in memory allocation HOBs.
@@ -662,7 +643,6 @@ MergeFreeMemoryInMemoryAllocationHob (
 
 **/
 EFI_STATUS
-// MU_CHANGE BEGIN: PEI Bins - Added PeiServices parameter
 FindFreeMemoryFromMemoryAllocationHob (
   IN  CONST EFI_PEI_SERVICES  **PeiServices,
   IN  EFI_MEMORY_TYPE         MemoryType,
@@ -726,8 +706,6 @@ FindFreeMemoryFromMemoryAllocationHob (
   }
 }
 
-// MU_CHANGE END: PEI Bins
-
 /**
   The purpose of the service is to publish an interface that allows
   PEIMs to allocate memory ranges that are managed by the PEI Foundation.
@@ -768,7 +746,7 @@ PeiAllocatePages (
   UINTN                 RemainingMemory;
   UINTN                 Granularity;
   UINTN                 Padding;
-  UINTN                 Index;  // MU_CHANGE: PEI Bins
+  UINTN                 Index;
 
   if ((MemoryType != EfiLoaderCode) &&
       (MemoryType != EfiLoaderData) &&
@@ -782,6 +760,8 @@ PeiAllocatePages (
   {
     return EFI_INVALID_PARAMETER;
   }
+
+  RemainingPages = 0;
 
   Granularity = DEFAULT_PAGE_ALLOCATION_GRANULARITY;
 
@@ -818,20 +798,17 @@ PeiAllocatePages (
     FreeMemoryTop    = &(PrivateData->FreePhysicalMemoryTop);
     FreeMemoryBottom = &(PrivateData->PhysicalMemoryBegin);
   } else {
-    // MU_CHANGE BEGIN: PEI Bins - Bin-aware memory allocation
-    // if we are in permanent memory and have memory bins, we need to respect them
-    if (PrivateData->MemoryTypeInformationInitialized && !PrivateData->MemoryTypeStatistics[MemoryType].DefaultBin) {
+    // if we are in permanent memory and have memory bins, we need to respect them. A maximum address
+    // of 0 means the memory type is using the default bin, which is the PHIT here.
+    if (PrivateData->MemoryTypeInformationInitialized && (PrivateData->MemoryTypeStatistics[MemoryType].MaximumAddress != 0)) {
       FreeMemoryTop    = &(PrivateData->MemoryTypeStatistics[MemoryType].MaximumAddress);
       FreeMemoryBottom = &(PrivateData->MemoryTypeStatistics[MemoryType].BaseAddress);
     } else {
       FreeMemoryTop    = &(Hob.HandoffInformationTable->EfiFreeMemoryTop);
       FreeMemoryBottom = &(Hob.HandoffInformationTable->EfiFreeMemoryBottom);
     }
-
-    // MU_CHANGE END: PEI Bins
   }
 
-  // MU_CHANGE BEGIN: PEI Bins - Two-pass allocation: try bin first, then PHIT, then HOBs
   //
   // We will attempt up to two times here.
   // If we don't have memory bins, we will only attempt to allocate from the PHIT.
@@ -848,7 +825,7 @@ PeiAllocatePages (
     //
     Padding = *(FreeMemoryTop) & (Granularity - 1);
     if (((UINTN)(*FreeMemoryTop - *FreeMemoryBottom) < Padding) || (*(FreeMemoryTop) - Padding == 0)) {
-      if ((Index == 0) && PrivateData->MemoryTypeInformationInitialized && !PrivateData->MemoryTypeStatistics[MemoryType].DefaultBin) {
+      if ((Index == 0) && PrivateData->MemoryTypeInformationInitialized && (PrivateData->MemoryTypeStatistics[MemoryType].MaximumAddress != 0)) {
         //
         // Try the default bin before searching memory allocation HOBs
         //
@@ -914,7 +891,7 @@ PeiAllocatePages (
 
     // If this was the first allocation attempt, we are using memory bins, and this memory type lands in a bin,
     // retry allocation but target the PHIT free region.
-    if ((Index == 0) && PrivateData->MemoryTypeInformationInitialized && !PrivateData->MemoryTypeStatistics[MemoryType].DefaultBin) {
+    if ((Index == 0) && PrivateData->MemoryTypeInformationInitialized && (PrivateData->MemoryTypeStatistics[MemoryType].MaximumAddress != 0)) {
       //
       // Try to the default bin before searching memory allocation HOBs
       //
@@ -938,7 +915,6 @@ NotEnoughFreeMemory:
   DEBUG ((DEBUG_ERROR, "AllocatePages failed: No 0x%lx Pages is available.\n", (UINT64)Pages));
   DEBUG ((DEBUG_ERROR, "There is only left 0x%lx pages memory resource to be allocated.\n", (UINT64)RemainingPages));
   return EFI_OUT_OF_RESOURCES;
-  // MU_CHANGE END: PEI Bins
 }
 
 /**
@@ -1073,7 +1049,7 @@ PeiFreePages (
   }
 
   if (MemoryAllocationHob != NULL) {
-    UpdateOrSplitMemoryAllocationHob (PeiServices, MemoryAllocationHob, Memory, Bytes, EfiConventionalMemory);  // MU_CHANGE: PEI Bins
+    UpdateOrSplitMemoryAllocationHob (PeiServices, MemoryAllocationHob, Memory, Bytes, EfiConventionalMemory);
     FreeMemoryAllocationHob (PrivateData, MemoryAllocationHob);
     return EFI_SUCCESS;
   } else {

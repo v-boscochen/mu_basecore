@@ -1,5 +1,3 @@
-// MU_CHANGE: PEI Bins - Whole File
-
 /** @file
 
   Shared logic between cores to work with memory bins for S4 resume stability. This file is duplicated in PEI Core and
@@ -47,8 +45,13 @@
 /**
   Calculate total memory bin size needed.
 
-  @param BinTop The top address of the memory bins. This is an optional parameter.
-                If non-zero, alignment requirements will be considered in the calculation.
+  @param BinTop                The top address of the memory bins. This is an optional parameter.
+                               When NULL, the returned size meets the alignment requirements as long as
+                               the base address selected also meets the alignment requirements. When
+                               non-NULL, then the returned BinTop value and the returned size both meet
+                               the alignment requirements. When non-NULL, this will be updated on
+                               output to the new top address of the memory bins that must be used to
+                               satisfy alignment requirements.
   @param MemoryTypeInformation The memory type information array.
 
   @return The total memory bin size needed.
@@ -56,17 +59,16 @@
 **/
 UINT64
 CalculateTotalMemoryBinSizeNeeded (
-  IN UINTN                        BinTop,
-  IN EFI_MEMORY_TYPE_INFORMATION  *MemoryTypeInformation
+  IN OUT OPTIONAL EFI_PHYSICAL_ADDRESS  *BinTop,
+  IN EFI_MEMORY_TYPE_INFORMATION        *MemoryTypeInformation
   )
 {
   UINTN   Index;
   UINT64  TotalSize;
-  UINTN   Granularity;
+  UINT64  Granularity;
 
+  ASSERT (MemoryTypeInformation != NULL);
   if (MemoryTypeInformation == NULL) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid parameter(s)\n", __func__));
-    ASSERT (FALSE);
     return 0;
   }
 
@@ -85,16 +87,23 @@ CalculateTotalMemoryBinSizeNeeded (
     }
 
     // MemoryTypeInformation[Index].NumberOfPages is already aligned to the allocation granularity
-    TotalSize += LShiftU64 (MemoryTypeInformation[Index].NumberOfPages, EFI_PAGE_SHIFT);
+    TotalSize += EFI_PAGES_TO_SIZE ((UINTN)MemoryTypeInformation[Index].NumberOfPages);
 
     // BinTop is optional
-    if (BinTop == 0) {
+    if (BinTop == NULL) {
       continue;
     }
 
-    BinTop    -= (UINTN)LShiftU64 (MemoryTypeInformation[Index].NumberOfPages, EFI_PAGE_SHIFT);
-    TotalSize += (BinTop & (Granularity - 1));
-    BinTop    &= ~(Granularity - 1);
+    // Lower the bin top to the next aligned address, taking any padding into account in the size
+    *BinTop   -= EFI_PAGES_TO_SIZE ((UINTN)MemoryTypeInformation[Index].NumberOfPages);
+    TotalSize += (*BinTop & (Granularity - 1));
+    *BinTop   &= ~(Granularity - 1);
+  }
+
+  if (BinTop != NULL) {
+    // Set *BinTop to the new top of the memory bins. It currently points to the base address of
+    // the memory bins
+    *BinTop += TotalSize;
   }
 
   return TotalSize;
@@ -120,9 +129,10 @@ PopulateMemoryTypeInformation (
   EFI_HOB_GUID_TYPE            *GuidHob;
   UINTN                        Index;
   UINT32                       Granularity;
+  UINTN                        MaxIndex;
 
+  ASSERT (MemoryTypeInformation != NULL);
   if (MemoryTypeInformation == NULL) {
-    ASSERT (FALSE);
     return EFI_INVALID_PARAMETER;
   }
 
@@ -130,8 +140,10 @@ PopulateMemoryTypeInformation (
   if (GuidHob != NULL) {
     EfiMemoryTypeInformation = GET_GUID_HOB_DATA (GuidHob);
     DataSize                 = GET_GUID_HOB_DATA_SIZE (GuidHob);
+
     if ((EfiMemoryTypeInformation != NULL) && (DataSize > 0) && (DataSize <= (EfiMaxMemoryType + 1) * sizeof (EFI_MEMORY_TYPE_INFORMATION))) {
       CopyMem (MemoryTypeInformation, EfiMemoryTypeInformation, DataSize);
+      MaxIndex = (DataSize / sizeof (EFI_MEMORY_TYPE_INFORMATION)) - 1;
 
       for (Index = 0; MemoryTypeInformation[Index].Type != EfiMaxMemoryType; Index++) {
         //
@@ -153,18 +165,33 @@ PopulateMemoryTypeInformation (
           }
 
           // Align the number of pages to the allocation granularity
-          MemoryTypeInformation[Index].NumberOfPages = (UINT32)RShiftU64 (ALIGN_VALUE (LShiftU64 (MemoryTypeInformation[Index].NumberOfPages, EFI_PAGE_SHIFT), Granularity), EFI_PAGE_SHIFT);
+          MemoryTypeInformation[Index].NumberOfPages = (UINT32)EFI_SIZE_TO_PAGES (ALIGN_VALUE (EFI_PAGES_TO_SIZE ((UINTN)MemoryTypeInformation[Index].NumberOfPages), Granularity));
+        }
+
+        // It is guaranteed that DataSize must be > 0 and <= (EfiMaxMemoryType + 1) * sizeof (EFI_MEMORY_TYPE_INFORMATION)
+        // however, we may have a corrupted HOB that does end in the EfiMaxMemoryType, so we need to terminate the loop
+        // to not overrun the array. Because we can't trust the HOB data, we will reset it to 0.
+        if (Index == MaxIndex) {
+          DEBUG ((DEBUG_WARN, "%a: Corrupted Memory Type Information HOB data\n", __func__));
+          goto CleanAndError;
         }
       }
 
       return EFI_SUCCESS;
     }
 
-    DEBUG ((DEBUG_ERROR, "%a: Invalid Memory Type Information HOB data\n", __func__));
-    ASSERT (FALSE);
+    DEBUG ((DEBUG_WARN, "%a: Invalid Memory Type Information HOB data\n", __func__));
   }
 
-  DEBUG ((DEBUG_ERROR, "%a: No Memory Type Information HOB found\n", __func__));
+CleanAndError:
+  // We may have gotten here from a corrupted HOB, ensure all data is set back
+  // to disabled bins.
+  for (Index = 0; Index <= EfiMaxMemoryType; Index++) {
+    MemoryTypeInformation[Index].Type          = (UINT32)Index;
+    MemoryTypeInformation[Index].NumberOfPages = 0;
+  }
+
+  DEBUG ((DEBUG_WARN, "%a: No Memory Type Information HOB found, S4 resume is likely to fail\n", __func__));
 
   return EFI_NOT_FOUND;
 }
@@ -192,10 +219,11 @@ GetMemoryTypeInformationResourceHob (
   EFI_PEI_HOB_POINTERS         Hob;
   EFI_HOB_RESOURCE_DESCRIPTOR  *ResourceHob;
   EFI_HOB_RESOURCE_DESCRIPTOR  *MemoryTypeInformationResourceHob;
+  EFI_PHYSICAL_ADDRESS         BinTop;
 
+  ASSERT (HobStart != NULL);
+  ASSERT (MemoryTypeInformation != NULL);
   if ((HobStart == NULL) || (MemoryTypeInformation == NULL)) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid parameter(s)\n", __func__));
-    ASSERT (FALSE);
     return NULL;
   }
 
@@ -205,7 +233,9 @@ GetMemoryTypeInformationResourceHob (
   MemoryTypeInformationResourceHob = NULL;
   Count                            = 0;
   for (Hob.Raw = *HobStart; !END_OF_HOB_LIST (Hob); Hob.Raw = GET_NEXT_HOB (Hob)) {
-    if (GET_HOB_TYPE (Hob) != EFI_HOB_TYPE_RESOURCE_DESCRIPTOR) {
+    // MU_CHANGE START: Add support for EFI_HOB_TYPE_RESOURCE_DESCRIPTOR2
+    if ((GET_HOB_TYPE (Hob) != EFI_HOB_TYPE_RESOURCE_DESCRIPTOR) && (GET_HOB_TYPE (Hob) != EFI_HOB_TYPE_RESOURCE_DESCRIPTOR2)) {
+      // MU_CHANGE END: Add support for EFI_HOB_TYPE_RESOURCE_DESCRIPTOR2
       continue;
     }
 
@@ -223,7 +253,8 @@ GetMemoryTypeInformationResourceHob (
       continue;
     }
 
-    if (ResourceHob->ResourceLength >= CalculateTotalMemoryBinSizeNeeded ((UINTN)(ResourceHob->PhysicalStart + ResourceHob->ResourceLength), MemoryTypeInformation)) {
+    BinTop = ResourceHob->PhysicalStart + ResourceHob->ResourceLength;
+    if (ResourceHob->ResourceLength >= CalculateTotalMemoryBinSizeNeeded (&BinTop, MemoryTypeInformation)) {
       MemoryTypeInformationResourceHob = ResourceHob;
     }
   }
@@ -256,8 +287,11 @@ InitializeBinStatisticsFromRange (
   EFI_MEMORY_TYPE  Type;
   UINTN            Index;
 
+  ASSERT (MemoryTypeInformation != NULL);
+  ASSERT (MemoryTypeStatistics != NULL);
+  ASSERT (DefaultMaximumAddress != NULL);
+
   if ((MemoryTypeInformation == NULL) || (MemoryTypeStatistics == NULL) || (DefaultMaximumAddress == NULL)) {
-    ASSERT (FALSE);
     return;
   }
 
@@ -275,14 +309,13 @@ InitializeBinStatisticsFromRange (
     MemoryTypeStatistics[Type].CurrentNumberOfPages = 0;
     if (MemoryTypeStatistics[Type].MaximumAddress == MAX_ALLOC_ADDRESS) {
       MemoryTypeStatistics[Type].MaximumAddress = *DefaultMaximumAddress;
-      MemoryTypeStatistics[Type].DefaultBin     = TRUE;
     }
   }
 }
 
 /**
   Sets the preferred memory range to use for the Memory Type Information bins.
-  This service must be called before fist call to CoreAddMemoryDescriptor().
+  This service must be called before first call to CoreAddMemoryDescriptor().
 
   If the location of the Memory Type Information bins has already been
   established or the size of the range provides is smaller than all the
@@ -315,13 +348,16 @@ CoreSetMemoryTypeInformationRange (
   UINTN                 Index;
   UINT64                Size;
 
+  ASSERT (MemoryTypeInformation != NULL);
+  ASSERT (MemoryTypeInformationInitialized != NULL);
+  ASSERT (MemoryTypeStatistics != NULL);
+  ASSERT (DefaultMaximumAddress != NULL);
+
   if ((MemoryTypeInformation == NULL) ||
       (MemoryTypeInformationInitialized == NULL) ||
       (MemoryTypeStatistics == NULL) ||
       (DefaultMaximumAddress == NULL))
   {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid parameter(s)\n", __func__));
-    ASSERT (FALSE);
     return;
   }
 
@@ -336,7 +372,8 @@ CoreSetMemoryTypeInformationRange (
   //
   // Return if size of the Memory Type Information bins is greater than Length
   //
-  Size = CalculateTotalMemoryBinSizeNeeded ((UINTN)(Start + Length), MemoryTypeInformation);
+  Top  = Start + Length;
+  Size = CalculateTotalMemoryBinSizeNeeded (&Top, MemoryTypeInformation);
 
   if (Size > Length) {
     return;
@@ -346,7 +383,6 @@ CoreSetMemoryTypeInformationRange (
   // Loop through each memory type in the order specified by the
   // gMemoryTypeInformation[] array
   //
-  Top = Start + Length;
   for (Index = 0; MemoryTypeInformation[Index].Type != EfiMaxMemoryType; Index++) {
     //
     // Make sure the memory type in the MemoryTypeInformation[] array is valid
@@ -358,7 +394,7 @@ CoreSetMemoryTypeInformationRange (
 
     if (MemoryTypeInformation[Index].NumberOfPages != 0) {
       MemoryTypeStatistics[Type].MaximumAddress = Top - 1;
-      Top                                      -= LShiftU64 (MemoryTypeInformation[Index].NumberOfPages, EFI_PAGE_SHIFT);
+      Top                                      -= EFI_PAGES_TO_SIZE ((UINTN)MemoryTypeInformation[Index].NumberOfPages);
       MemoryTypeStatistics[Type].BaseAddress    = Top;
 
       //
@@ -376,6 +412,13 @@ CoreSetMemoryTypeInformationRange (
 
   InitializeBinStatisticsFromRange (MemoryTypeInformation, MemoryTypeStatistics, DefaultMaximumAddress);
 
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: Inherited range 0x%llx - 0x%llx for memory bins\n",
+    __func__,
+    Start,
+    Start + Length -1
+    ));
   *MemoryTypeInformationInitialized = TRUE;
 }
 
@@ -396,7 +439,8 @@ CoreSetMemoryTypeInformationRange (
                                             provided range is used.
   @param  CreateHob                         TRUE to create Memory Type Information Resource HOB after successful
                                             allocation. This is used for PEI Core to report the bins to DXE Core.
-                                            FALSE if HOB creation is not needed.
+                                            DXE Core must set this to FALSE because HOB creation is not supported in
+                                            DXE (nor is the information required to be passed to another entity).
 **/
 VOID
 EFIAPI
@@ -414,13 +458,16 @@ AllocateMemoryTypeInformationBins (
   EFI_PHYSICAL_ADDRESS  LastBinAddress;
   UINT64                RequiredSize;
 
+  ASSERT (MemoryTypeInformationInitialized != NULL);
+  ASSERT (MemoryTypeInformation != NULL);
+  ASSERT (MemoryTypeStatistics != NULL);
+  ASSERT (DefaultMaximumAddress != NULL);
+
   if ((MemoryTypeInformationInitialized == NULL) ||
       (MemoryTypeInformation == NULL) ||
       (MemoryTypeStatistics == NULL) ||
       (DefaultMaximumAddress == NULL))
   {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid parameter(s)\n", __func__));
-    ASSERT (FALSE);
     return;
   }
 
@@ -432,26 +479,37 @@ AllocateMemoryTypeInformationBins (
   }
 
   BaseAddress  = 0;
-  RequiredSize = CalculateTotalMemoryBinSizeNeeded (0, MemoryTypeInformation);
+  RequiredSize = CalculateTotalMemoryBinSizeNeeded (NULL, MemoryTypeInformation);
   if (RequiredSize == 0) {
     *MemoryTypeInformationInitialized = TRUE;
     return;
   }
 
-  DEBUG ((DEBUG_INFO, "%a: Attempting to allocate 0x%llx bytes for all memory bins\n", __func__, RequiredSize));
-
   // To ensure we get a contiguous range of memory for our bins, we will attempt to allocate
-  // all of the memory needed in one go. If that works, we can then carve it up into the individual bins. We allocate
-  // reserved pages to ensure runtime page allocation granularity is taken into account.
-  BaseAddress = (EFI_PHYSICAL_ADDRESS)(UINTN)AllocateReservedPages (
-                                               (UINTN)RShiftU64 (RequiredSize, EFI_PAGE_SHIFT)
+  // all of the memory needed in one go. If that works, we can then carve it up into the individual bins.
+  // Our size is already aligned to the correct granularity, allocate aligned pages to ensure the base address is
+  // aligned.
+  BaseAddress = (EFI_PHYSICAL_ADDRESS)(UINTN)AllocateAlignedPages (
+                                               EFI_SIZE_TO_PAGES ((UINTN)RequiredSize),
+                                               RUNTIME_PAGE_ALLOCATION_GRANULARITY
                                                );
 
   if (BaseAddress == 0) {
-    DEBUG ((DEBUG_ERROR, "%a: Could not allocate contiguous pages for all memory bins\n", __func__));
-    ASSERT (FALSE);
+    DEBUG ((
+      DEBUG_INFO,
+      "%a: Could not allocate contiguous pages for all memory bins. It will be attempted again when more memory is added.\n",
+      __func__
+      ));
     return;
   }
+
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: Allocated 0x%llx - 0x%llx for memory bins\n",
+    __func__,
+    BaseAddress,
+    BaseAddress + RequiredSize - 1
+    ));
 
   LastBinAddress         = BaseAddress + RequiredSize;
   *DefaultMaximumAddress = BaseAddress - 1;
@@ -469,7 +527,7 @@ AllocateMemoryTypeInformationBins (
     }
 
     if (MemoryTypeInformation[Index].NumberOfPages != 0) {
-      MemoryTypeStatistics[Type].BaseAddress    = LastBinAddress - LShiftU64 (MemoryTypeInformation[Index].NumberOfPages, EFI_PAGE_SHIFT);
+      MemoryTypeStatistics[Type].BaseAddress    = LastBinAddress - EFI_PAGES_TO_SIZE (MemoryTypeInformation[Index].NumberOfPages);
       MemoryTypeStatistics[Type].MaximumAddress = LastBinAddress - 1;
       LastBinAddress                            = MemoryTypeStatistics[Type].BaseAddress;
     }
@@ -480,9 +538,9 @@ AllocateMemoryTypeInformationBins (
   // those memory areas can be freed for future allocations, and all future memory
   // allocations can occur within their respective bins
   //
-  FreePages (
+  FreeAlignedPages (
     (VOID *)(UINTN)BaseAddress,
-    (UINTN)RShiftU64 (RequiredSize, EFI_PAGE_SHIFT)
+    EFI_SIZE_TO_PAGES ((UINTN)RequiredSize)
     );
   for (Index = 0; MemoryTypeInformation[Index].Type != EfiMaxMemoryType; Index++) {
     //
@@ -545,12 +603,14 @@ UpdateMemoryStatistics (
   IN EFI_PHYSICAL_ADDRESS         DefaultMaximumAddress
   )
 {
+  ASSERT (MemoryTypeInformationInitialized != NULL);
+  ASSERT (MemoryTypeStatistics != NULL);
+  ASSERT (MemoryTypeInformation != NULL);
+
   if ((MemoryTypeInformationInitialized == NULL) ||
       (MemoryTypeStatistics == NULL) ||
       (MemoryTypeInformation == NULL))
   {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid parameter(s)\n", __func__));
-    ASSERT (FALSE);
     return;
   }
 

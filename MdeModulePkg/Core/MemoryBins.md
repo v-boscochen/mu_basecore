@@ -1,4 +1,3 @@
-<!-- MU_CHANGE: PEI Bins - Whole File -->
 # Memory Bin Feature
 
 ## Table of Contents

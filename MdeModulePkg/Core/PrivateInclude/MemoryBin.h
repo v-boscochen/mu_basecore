@@ -1,5 +1,3 @@
-// MU_CHANGE: PEI Bins - Whole File
-
 /** @file
   Shared logic between cores to work with memory bins for S4 resume stability.
 
@@ -12,11 +10,29 @@
 
 #include <Guid/MemoryTypeInformation.h>
 
+//
+// Entry in an array that keeps track of memory type statistics per memory bin
+//
+typedef struct {
+  EFI_PHYSICAL_ADDRESS    BaseAddress;
+  EFI_PHYSICAL_ADDRESS    MaximumAddress;
+  UINT64                  CurrentNumberOfPages;
+  UINT64                  NumberOfPages;
+  UINTN                   InformationIndex;
+  BOOLEAN                 Special;
+  BOOLEAN                 Runtime;
+} EFI_MEMORY_TYPE_STATISTICS;
+
 /**
   Calculate total memory bin size needed.
 
-  @param BinTop The top address of the memory bins. This is an optional parameter.
-                If non-zero, alignment requirements will be considered in the calculation.
+  @param BinTop                The top address of the memory bins. This is an optional parameter.
+                               When NULL, the returned size meets the alignment requirements as long as
+                               the base address selected also meets the alignment requirements. When
+                               non-NULL, then the returned BinTop value and the returned size both meet
+                               the alignment requirements. When non-NULL, this will be updated on
+                               output to the new top address of the memory bins that must be used to
+                               satisfy alignment requirements.
   @param MemoryTypeInformation The memory type information array.
 
   @return The total memory bin size needed.
@@ -24,8 +40,8 @@
 **/
 UINT64
 CalculateTotalMemoryBinSizeNeeded (
-  IN UINTN                        BinTop,
-  IN EFI_MEMORY_TYPE_INFORMATION  *MemoryTypeInformation
+  IN OUT OPTIONAL EFI_PHYSICAL_ADDRESS  *BinTop,
+  IN EFI_MEMORY_TYPE_INFORMATION        *MemoryTypeInformation
   );
 
 /**
@@ -109,7 +125,8 @@ CoreSetMemoryTypeInformationRange (
                                             provided range is used.
   @param  CreateHob                         TRUE to create Memory Type Information Resource HOB after successful
                                             allocation. This is used for PEI Core to report the bins to DXE Core.
-                                            FALSE if HOB creation is not needed.
+                                            DXE Core must set this to FALSE because HOB creation is not supported in
+                                            DXE (nor is the information required to be passed to another entity).
 **/
 VOID
 EFIAPI
